@@ -107,8 +107,18 @@ namespace FRC_Kinect
     std::vector<Color> colors;
     float colorClipDistanceFront = 0;
     float colorClipDistanceBack = 0;
+    float colorClipDistanceFront_off = 2;
+    float colorClipDistanceBack_off = -.39;
 
   public:
+
+    float getColorClipDistanceFront_off(){
+      return colorClipDistanceFront_off;
+    }
+
+    float getColorClipDistanceBack_off(){
+      return colorClipDistanceBack_off;
+    }
 
     float getColorClipDistanceFront(){
       return colorClipDistanceFront;
@@ -151,7 +161,7 @@ namespace FRC_Kinect
       m_depth_mutex.lock();
       uint16_t *depth = static_cast<uint16_t *>(_depth);
 
-      int num_threads = 12;
+      int num_threads = 15;
       std::vector<std::thread> threads;
 
       for (unsigned int i = 0; i < num_threads; i++)
@@ -160,7 +170,7 @@ namespace FRC_Kinect
           for (unsigned int j = i * FREENECT_FRAME_PIX / num_threads; j < (i + 1) * FREENECT_FRAME_PIX / num_threads; j++)
           {
             float d = depth[j] / 2048.0;
-            float v= _map(d, 0, 1, colorClipDistanceBack, 2-colorClipDistanceFront);
+            float v= _map(d, 0, 1, colorClipDistanceBack_off-colorClipDistanceBack, colorClipDistanceFront_off-colorClipDistanceFront);
             Color::copyToPixel(Color::Gradient(v, colors), &m_buffer_depth[j * 3]);
           }
         }));
@@ -346,8 +356,9 @@ void DrawGLScene()
     freenect_angle = device->getState().getTiltDegs();
   }*/
   device->updateState();
-  printf("\r demanded tilt angle: %+4.2f device tilt angle: %+4.2f", freenect_angle, device->getState().getTiltDegs());
-  printf("\r color clip distance front: %+4.2f color clip distance back: %+4.2f", device->getColorClipDistanceFront(), device->getColorClipDistanceBack());
+  printf("\r demanded tilt angle: %+4.2f device tilt angle: %+4.2f\n", freenect_angle, device->getState().getTiltDegs());
+  printf("\r color clip distance front: %+4.2f color clip distance back: %+4.2f\n", device->getColorClipDistanceFront(), device->getColorClipDistanceBack());
+  printf("\r applied clip distance front: %+4.2f applied clip distance back: %+4.2f\n", device->getColorClipDistanceFront_off()-device->getColorClipDistanceFront(), device->getColorClipDistanceBack_off()-device->getColorClipDistanceBack());
   fflush(stdout);
 
   device->getDepth(depth);
@@ -437,12 +448,10 @@ int main(int argc, char **argv)
 
   // Set Kinect Device Colors
   std::vector<Color> colors;
-  //#5EDEEF
-  colors.push_back(Color(0x5EDEEF));
-  //#DCE956
-  colors.push_back(Color(0xDCE956));
-  //#E98FC0
-  colors.push_back(Color(0xE98FC0));
+  colors.push_back(Color(0x03001e));
+  colors.push_back(Color(0x7303c0));
+  colors.push_back(Color(0xec38bc));
+  colors.push_back(Color(0xfdeff9));
   device->setColors(colors, true);
 
   // Start Kinect Device
