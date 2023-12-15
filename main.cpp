@@ -4,12 +4,70 @@
 #include <vector>
 #include <cmath>
 #include <pthread.h>
+#include <algorithm>
+#include <thread>
 
 #include <GL/freeglut.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
 
 using namespace std;
+
+float _lerp(float a, float b, float t){
+  return a + (b - a) * t;
+}
+
+float _map(float value, float istart, float istop, float ostart, float ostop){
+  return ostart + (ostop - ostart) * ((value - istart) / (istop - istart));
+}
+
+struct Color{
+  float r;
+  float g;
+  float b;
+  Color(float r, float g, float b){
+    this->r = r;
+    this->g = g;
+    this->b = b;
+  }
+
+  //hex
+  Color(int hex){
+    this->r = ((hex >> 16) & 0xFF) / 255.0;
+    this->g = ((hex >> 8) & 0xFF) / 255.0;
+    this->b = ((hex) & 0xFF) / 255.0;
+  }
+
+  Color(){
+    this->r = 0;
+    this->g = 0;
+    this->b = 0;
+  }
+  
+  static Color Lerp(Color a, Color b, float t){
+    return Color(_lerp(a.r, b.r, t), _lerp(a.g, b.g, t), _lerp(a.b, b.b, t));
+  }
+  
+  static Color Gradient(float value, std::vector<Color> colors){
+    if(colors.size() == 0){
+      return Color();
+    }
+    if(colors.size() == 1){
+      return colors[0];
+    }
+    float t = _map(value, 0, 1, 0, colors.size() - 1);
+    int i = (int)t;
+    t -= i;
+    return Lerp(colors[i], colors[i + 1], t);
+  }
+
+  static void copyToPixel(Color c, void* pixel){
+    uint8_t* p = (uint8_t*)pixel;
+    p[0] = (uint8_t)(c.r * 255);
+    p[1] = (uint8_t)(c.g * 255);
+    p[2] = (uint8_t)(c.b * 255);
+  }
+};
 
 // define MyFreenectDevice and Mutex class
 class Mutex
@@ -42,22 +100,41 @@ namespace FRC_Kinect
   private:
     vector<uint8_t> m_buffer_depth;
     vector<uint8_t> m_buffer_video;
-    vector<uint16_t> m_gamma;
     Mutex m_rgb_mutex;
     Mutex m_depth_mutex;
     bool m_new_rgb_frame;
     bool m_new_depth_frame;
+    std::vector<Color> colors;
+    float colorClipDistanceFront = 0;
+    float colorClipDistanceBack = 0;
 
   public:
 
-    Kinect(freenect_context *_ctx, int _index) : Freenect::FreenectDevice(_ctx, _index), m_buffer_depth(FREENECT_VIDEO_RGB_SIZE), m_buffer_video(FREENECT_VIDEO_RGB_SIZE), m_gamma(2048), m_new_rgb_frame(false), m_new_depth_frame(false)
-    {
-      for (unsigned int i = 0; i < 2048; i++)
-      {
-        float v = i / 2048.0;
-        v = pow(v, 3) * 6;
-        m_gamma[i] = v * 6 * 256;
+    float getColorClipDistanceFront(){
+      return colorClipDistanceFront;
+    }
+
+    void setColorClipDistanceFront(float colorClipDistance){
+      this->colorClipDistanceFront = colorClipDistance;
+    }
+
+    float getColorClipDistanceBack(){
+      return colorClipDistanceBack;
+    }
+
+    void setColorClipDistanceBack(float colorClipDistance){
+      this->colorClipDistanceBack = colorClipDistance;
+    }
+
+    void setColors(std::vector<Color> colors, bool reverse = false){
+      if(reverse){
+        std::reverse(colors.begin(), colors.end());
       }
+      this->colors = colors;
+    }
+
+    Kinect(freenect_context *_ctx, int _index) : Freenect::FreenectDevice(_ctx, _index), m_buffer_depth(FREENECT_VIDEO_RGB_SIZE), m_buffer_video(FREENECT_VIDEO_RGB_SIZE), m_new_rgb_frame(false), m_new_depth_frame(false)
+    {
     }
 
     void VideoCallback(void *_rgb, uint32_t timestamp)
@@ -73,49 +150,27 @@ namespace FRC_Kinect
     {
       m_depth_mutex.lock();
       uint16_t *depth = static_cast<uint16_t *>(_depth);
-      for (unsigned int i = 0; i < FREENECT_FRAME_PIX; i++)
+
+      int num_threads = 12;
+      std::vector<std::thread> threads;
+
+      for (unsigned int i = 0; i < num_threads; i++)
       {
-        int pval = m_gamma[depth[i]];
-        int lb = pval & 0xff;
-        switch (pval >> 8)
-        {
-        case 0:
-          m_buffer_depth[3 * i + 0] = 255;
-          m_buffer_depth[3 * i + 1] = 255 - lb;
-          m_buffer_depth[3 * i + 2] = 255 - lb;
-          break;
-        case 1:
-          m_buffer_depth[3 * i + 0] = 255;
-          m_buffer_depth[3 * i + 1] = lb;
-          m_buffer_depth[3 * i + 2] = 0;
-          break;
-        case 2:
-          m_buffer_depth[3 * i + 0] = 255 - lb;
-          m_buffer_depth[3 * i + 1] = 255;
-          m_buffer_depth[3 * i + 2] = 0;
-          break;
-        case 3:
-          m_buffer_depth[3 * i + 0] = 0;
-          m_buffer_depth[3 * i + 1] = 255;
-          m_buffer_depth[3 * i + 2] = lb;
-          break;
-        case 4:
-          m_buffer_depth[3 * i + 0] = 0;
-          m_buffer_depth[3 * i + 1] = 255 - lb;
-          m_buffer_depth[3 * i + 2] = 255;
-          break;
-        case 5:
-          m_buffer_depth[3 * i + 0] = 0;
-          m_buffer_depth[3 * i + 1] = 0;
-          m_buffer_depth[3 * i + 2] = 255 - lb;
-          break;
-        default:
-          m_buffer_depth[3 * i + 0] = 0;
-          m_buffer_depth[3 * i + 1] = 0;
-          m_buffer_depth[3 * i + 2] = 0;
-          break;
-        }
+        threads.push_back(std::thread([&, i]() {
+          for (unsigned int j = i * FREENECT_FRAME_PIX / num_threads; j < (i + 1) * FREENECT_FRAME_PIX / num_threads; j++)
+          {
+            float d = depth[j] / 2048.0;
+            float v= _map(d, 0, 1, colorClipDistanceBack, 2-colorClipDistanceFront);
+            Color::copyToPixel(Color::Gradient(v, colors), &m_buffer_depth[j * 3]);
+          }
+        }));
       }
+      
+      for (auto &thread : threads)
+      {
+        thread.join();
+      }
+
       m_new_depth_frame = true;
       m_depth_mutex.unlock();
     }
@@ -262,6 +317,23 @@ void keyPressed(unsigned char key, int x, int y)
     freenect_angle = -10;
   }
   device->setTiltDegrees(freenect_angle);
+
+  if (key == 'p')
+  {
+    device->setColorClipDistanceFront(device->getColorClipDistanceFront() + 0.01);
+  }
+  if (key == 'o')
+  {
+    device->setColorClipDistanceFront(device->getColorClipDistanceFront() - 0.01);
+  }
+  if (key == 'l')
+  {
+    device->setColorClipDistanceBack(device->getColorClipDistanceBack() + 0.01);
+  }
+  if (key == 'k')
+  {
+    device->setColorClipDistanceBack(device->getColorClipDistanceBack() - 0.01);
+  }
 }
 // define OpenGL functions
 void DrawGLScene()
@@ -275,6 +347,7 @@ void DrawGLScene()
   }*/
   device->updateState();
   printf("\r demanded tilt angle: %+4.2f device tilt angle: %+4.2f", freenect_angle, device->getState().getTiltDegs());
+  printf("\r color clip distance front: %+4.2f color clip distance back: %+4.2f", device->getColorClipDistanceFront(), device->getColorClipDistanceBack());
   fflush(stdout);
 
   device->getDepth(depth);
@@ -361,6 +434,17 @@ int main(int argc, char **argv)
 {
   // Get Kinect Device
   device = &freenect.createDevice<FRC_Kinect::Kinect>(0);
+
+  // Set Kinect Device Colors
+  std::vector<Color> colors;
+  //#5EDEEF
+  colors.push_back(Color(0x5EDEEF));
+  //#DCE956
+  colors.push_back(Color(0xDCE956));
+  //#E98FC0
+  colors.push_back(Color(0xE98FC0));
+  device->setColors(colors, true);
+
   // Start Kinect Device
   device->setTiltDegrees(0);
   device->startVideo();

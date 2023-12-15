@@ -7,11 +7,6 @@ find_package(OpenGL REQUIRED)
 include_directories(${OpenGL_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} OpenGL::GL)
 
-#glew
-find_package(GLEW REQUIRED)
-include_directories(${GLEW_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} GLEW::GLEW)
-
 #freeglut
 find_package(GLUT REQUIRED)
 include_directories(${GLUT_INCLUDE_DIRS})
