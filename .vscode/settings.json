@@ -63,6 +63,8 @@
 		"semaphore": "cpp",
 		"span": "cpp",
 		"stop_token": "cpp",
-		"thread": "cpp"
+		"thread": "cpp",
+		"*.ipp": "cpp",
+		"__locale": "cpp"
 	}
 }

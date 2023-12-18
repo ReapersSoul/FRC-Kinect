@@ -1,5 +1,4 @@
 #include <libfreenect.hpp>
-#include <libfreenect.h>
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -398,11 +397,11 @@ namespace FRC_Kinect
 				// copy to image mat
 				if (output.rows != 480 || output.cols != 640)
 				{
-					output = cv::Mat(480, 640, CV_8UC3, &ImageData[0]);
+					output = cv::Mat(480, 640, CV_8UC3, ImageData.data()).clone();
 				}
 				else
 				{
-					output.data = &ImageData[0];
+					memccpy(output.data, ImageData.data(), 0, ImageData.size());
 				}
 				NewImageFrame = false;
 				ImageMutex.unlock();
@@ -423,11 +422,11 @@ namespace FRC_Kinect
 				// create deapth mat using deapthtoColor
 				if (output.rows != 480 || output.cols != 640)
 				{
-					output = cv::Mat(480, 640, CV_8UC3, &DeapthToColor()[0]);
+					output = cv::Mat(480, 640, CV_8UC3, DeapthToColor().data()).clone();
 				}
 				else
 				{
-					memccpy(output.data, &DeapthToColor()[0], 0, DeapthToColor().size());
+					memccpy(output.data, DeapthToColor().data(), 0, DeapthToColor().size());
 				}
 				NewDeapthFrame = false;
 				DeapthMutex.unlock();
@@ -444,7 +443,7 @@ namespace FRC_Kinect
 		{
 			std::vector<Marker> markers;
 			ImageMutex.lock();
-			markers = findApriltags(cv::Mat(480, 640, CV_8UC3, &ImageData[0]), DeapthData, dictionaryType);
+			markers = findApriltags(cv::Mat(480, 640, CV_8UC3, ImageData.data()), DeapthData, dictionaryType);
 			ImageMutex.unlock();
 			return markers;
 		}
@@ -463,7 +462,6 @@ GLuint gl_depth_tex;
 GLuint gl_rgb_tex;
 int g_argc;
 char **g_argv;
-int got_frames(0);
 int window(0);
 
 // define libfreenect variables
@@ -651,49 +649,50 @@ void DrawGLScene()
 	printf("\r color clip distance front: %+4.2f color clip distance back: %+4.2f\n", device->getColorClipDistanceFront(), device->getColorClipDistanceBack());
 	printf("\r applied clip distance front: %+4.2f applied clip distance back: %+4.2f\n", device->getColorClipDistanceFront_off() - device->getColorClipDistanceFront(), device->getColorClipDistanceBack_off() - device->getColorClipDistanceBack());
 
-	device->getDepth(depth);
-	device->getRGB(rgb);
-
-	got_frames = 0;
-
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLoadIdentity();
 
 	glEnable(GL_TEXTURE_2D);
-
+	if (!device->getDepth(depth))
+	{
+		printf("Missed depth frame\n");
+	}
 	glBindTexture(GL_TEXTURE_2D, gl_depth_tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, 640, 480, 0, GL_RGB, GL_UNSIGNED_BYTE, &depth.data[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, 640, 480, 0, GL_RGB, GL_UNSIGNED_BYTE, depth.data);
 
-	DrawBox(FRC_Kinect::boundingBox(glm::vec3(0, 0, 0), glm::vec3(640, 0, 0), glm::vec3(0, 480, 0), glm::vec3(640, 480, 0)),false);
+	DrawBox(FRC_Kinect::boundingBox(glm::vec3(0, 0, 0), glm::vec3(640, 0, 0), glm::vec3(0, 480, 0), glm::vec3(640, 480, 0)), false);
 
+	if (device->getRGB(rgb))
+	{
+		printf("Missed rgb frame\n");
+	}
 	glBindTexture(GL_TEXTURE_2D, gl_rgb_tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, 640, 480, 0, GL_RGB, GL_UNSIGNED_BYTE, &rgb.data[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, 4, 640, 480, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb.data);
 
-	DrawBox(FRC_Kinect::boundingBox(glm::vec3(640, 0, 0), glm::vec3(1280, 0, 0), glm::vec3(640, 480, 0), glm::vec3(1280, 480, 0)),false);
+	DrawBox(FRC_Kinect::boundingBox(glm::vec3(640, 0, 0), glm::vec3(1280, 0, 0), glm::vec3(640, 480, 0), glm::vec3(1280, 480, 0)), false);
 
 	glDisable(GL_TEXTURE_2D);
 	// find apriltags
 	std::vector<FRC_Kinect::Marker> boxes = device->GetMarkers({cv::aruco::DICT_4X4_250, cv::aruco::DICT_5X5_250, cv::aruco::DICT_6X6_250, cv::aruco::DICT_7X7_250});
 	for (int i = 0; i < boxes.size(); i++)
 	{
-		FRC_Kinect::Marker box = boxes[i];
 		// shift render position to right side
 		glTranslatef(640, 0, 0);
 
 		glColor3f(1.0f, 0.0f, 0.0f);
-		DrawBox(box);
+		DrawBox(boxes[i]);
 
 		// draw center point
 		glColor3f(0.0f, 1.0f, 0.0f);
-		//TOOD: fix scale by depth
-		float scale = FRC_Kinect::_map(1-box.center.z, 0, 1, 0, 50);
-		DrawCircle(box.center.x, box.center.y, scale, 10);
+		// TOOD: fix scale by depth
+		float scale = FRC_Kinect::_map(1 - boxes[i].center.z, 0, 1, 0, 50);
+		DrawCircle(boxes[i].center.x, boxes[i].center.y, scale, 10);
 
 		// draw id text over box
-		char idText[10];
-		sprintf(idText, "ID:%d Depth:%2.3f", box.id, box.center.z);
+		char idText[20];
+		sprintf(idText, "ID:%d Depth:%2.3f", boxes[i].id, boxes[i].center.z);
 		glColor4f(0.0f, 0.0f, 0.0f, 255.0f);
-		DrawText(box.center.x - 5, box.center.y - 15, idText);
+		DrawText(boxes[i].center.x - 5, boxes[i].center.y - 15, idText);
 
 		glTranslatef(-640, 0, 0);
 	}
