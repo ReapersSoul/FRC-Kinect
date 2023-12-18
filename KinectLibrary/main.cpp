@@ -677,9 +677,8 @@ void DrawGLScene()
 	for (int i = 0; i < boxes.size(); i++)
 	{
 		// shift render position to right side
-		glTranslatef(640, 0, 0);
-
 		glColor3f(1.0f, 0.0f, 0.0f);
+		glTranslatef(640, 0, 0);
 		DrawBox(boxes[i]);
 
 		// draw center point
@@ -691,9 +690,8 @@ void DrawGLScene()
 		// draw id text over box
 		char idText[20];
 		sprintf(idText, "ID:%d Depth:%2.3f", boxes[i].id, boxes[i].center.z);
-		glColor4f(0.0f, 0.0f, 0.0f, 255.0f);
-		DrawText(boxes[i].center.x - 5, boxes[i].center.y - 15, idText);
-
+		glColor4f(0.0f, 0.0f, 1.0f, 255.0f);
+		DrawText(boxes[i].center.x, boxes[i].center.y, idText);
 		glTranslatef(-640, 0, 0);
 	}
 	glColor3f(1.0f, 1.0f, 1.0f);
